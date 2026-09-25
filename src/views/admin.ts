@@ -5,6 +5,8 @@ import { TIPOS_CAPACITACAO, labelTipo } from "../data/tipos";
 import { taxaResposta, formatarPercentual, formatarNumero } from "../utils/stats";
 import type { CapacitacaoRecord, CapacitacaoComContagem } from "../services/capacitacoes";
 import type { CriadorComContagem } from "../services/usuarios";
+import type { ResultadoPergunta } from "../services/resultados";
+import type { Pergunta } from "../services/perguntas";
 
 function opcaoSelecionada(valor: string | undefined, alvo: string): string {
   return valor === alvo ? "selected" : "";
@@ -248,24 +250,6 @@ export function paginaEditarCapacitacao(cap: CapacitacaoRecord, { erros = [], va
   });
 }
 
-export interface EstatisticasQuestao {
-  respostas: number;
-  media: number | null;
-  mediana: number | null;
-  distribuicao: { nota: number; quantidade: number }[];
-}
-
-export interface EstatisticasResultados {
-  totalRespostas: number;
-  q1: EstatisticasQuestao;
-  q2: EstatisticasQuestao;
-  q3: EstatisticasQuestao;
-  q4: EstatisticasQuestao;
-  q5: EstatisticasQuestao | null;
-  tempo: { label: string; quantidade: number; percentual: string }[];
-  comentarios: { nome: string; comentario: string }[];
-}
-
 function barrasDistribuicao(dist: { nota: number; quantidade: number }[]): string {
   const maximo = Math.max(1, ...dist.map((d) => d.quantidade));
   return `<div class="distribuicao">
@@ -281,16 +265,44 @@ function barrasDistribuicao(dist: { nota: number; quantidade: number }[]): strin
   </div>`;
 }
 
-function blocoQuestao(titulo: string, stats: EstatisticasQuestao): string {
-  return `<div class="questao-resultado">
-    <h3>${escapeHtml(titulo)}</h3>
-    <p>${stats.respostas} respostas · Média: ${formatarNumero(stats.media)} · Mediana: ${formatarNumero(stats.mediana)}</p>
-    ${barrasDistribuicao(stats.distribuicao)}
-  </div>`;
+function blocoResultadoPergunta(resultado: ResultadoPergunta): string {
+  const titulo = escapeHtml(resultado.pergunta.texto);
+
+  switch (resultado.tipo) {
+    case "escala_1_10":
+      return `<div class="questao-resultado">
+        <h3>${titulo}</h3>
+        <p>${resultado.totalRespostas} respostas · Média: ${formatarNumero(resultado.media)} · Mediana: ${formatarNumero(resultado.mediana)}</p>
+        ${barrasDistribuicao(resultado.distribuicao)}
+      </div>`;
+
+    case "sim_nao":
+    case "multipla_escolha":
+      return `<div class="questao-resultado">
+        <h3>${titulo}</h3>
+        <p>${resultado.totalRespostas} respostas</p>
+        <table>
+          <thead><tr><th>Opção</th><th>Quantidade</th><th>Percentual</th></tr></thead>
+          <tbody>
+            ${resultado.opcoes.map((o) => `<tr><td>${escapeHtml(o.label)}</td><td>${o.quantidade}</td><td>${o.percentual}</td></tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+
+    case "texto_livre":
+      return `<div class="questao-resultado">
+        <h3>${titulo}</h3>
+        ${
+          resultado.textos.length === 0
+            ? "<p>Nenhuma resposta registrada.</p>"
+            : `<ul class="comentarios">${resultado.textos.map((t) => `<li><strong>${escapeHtml(t.nome)}:</strong> ${escapeHtml(t.texto)}</li>`).join("")}</ul>`
+        }
+      </div>`;
+  }
 }
 
-export function paginaResultados(cap: CapacitacaoRecord, stats: EstatisticasResultados): string {
-  const taxa = formatarPercentual(taxaResposta(stats.totalRespostas, cap.numero_participantes));
+export function paginaResultados(cap: CapacitacaoRecord, totalRespostas: number, resultados: ResultadoPergunta[]): string {
+  const taxa = formatarPercentual(taxaResposta(totalRespostas, cap.numero_participantes));
 
   return layout({
     title: `Resultados ${cap.codigo}`,
@@ -303,39 +315,14 @@ export function paginaResultados(cap: CapacitacaoRecord, stats: EstatisticasResu
           <dt>Área</dt><dd>${escapeHtml(nomeArea(cap.area))}</dd>
           <dt>Tipo</dt><dd>${escapeHtml(labelTipo(cap.tipo))}</dd>
           <dt>Participantes</dt><dd>${cap.numero_participantes ?? "Não informado"}</dd>
-          <dt>Respostas</dt><dd>${stats.totalRespostas}</dd>
+          <dt>Respostas</dt><dd>${totalRespostas}</dd>
           <dt>Taxa de resposta</dt><dd>${taxa}</dd>
         </dl>
       </section>
 
       <section class="card">
-        <h2>Questões de avaliação</h2>
-        ${blocoQuestao("Q1. Importância para o trabalho na VISA", stats.q1)}
-        ${blocoQuestao("Q2. Adequação do conteúdo", stats.q2)}
-        ${blocoQuestao("Q3. Execução na prática profissional", stats.q3)}
-        ${blocoQuestao("Q4. Estratégias de ensino", stats.q4)}
-        ${stats.q5 ? blocoQuestao("Q5. Instrutor/tutor solícito", stats.q5) : ""}
-      </section>
-
-      <section class="card">
-        <h2>Tempo destinado à capacitação</h2>
-        <table>
-          <thead><tr><th>Resposta</th><th>Quantidade</th><th>Percentual</th></tr></thead>
-          <tbody>
-            ${stats.tempo.map((t) => `<tr><td>${escapeHtml(t.label)}</td><td>${t.quantidade}</td><td>${t.percentual}</td></tr>`).join("")}
-          </tbody>
-        </table>
-      </section>
-
-      <section class="card">
-        <h2>Comentários dos participantes</h2>
-        ${
-          stats.comentarios.length === 0
-            ? "<p>Nenhum comentário registrado.</p>"
-            : `<ul class="comentarios">${stats.comentarios
-                .map((c) => `<li><strong>${escapeHtml(c.nome)}:</strong> ${escapeHtml(c.comentario)}</li>`)
-                .join("")}</ul>`
-        }
+        <h2>Perguntas de avaliação</h2>
+        ${resultados.map(blocoResultadoPergunta).join("")}
       </section>`,
   });
 }
@@ -491,6 +478,140 @@ export function paginaNovoCriador({ erros = [], valores = {} }: FormularioNovoCr
           <p class="ajuda">Mínimo de 8 caracteres. Repasse essa senha ao Criador de Curso — não há tela de recuperação nesta versão.</p>
         </div>
         <button type="submit" class="button">Criar conta</button>
+      </form>`,
+  });
+}
+
+const LABEL_TIPO_PERGUNTA: Record<string, string> = {
+  escala_1_10: "Escala 1 a 10",
+  sim_nao: "Sim/Não",
+  multipla_escolha: "Múltipla escolha",
+  texto_livre: "Texto livre",
+};
+
+export function paginaListaPerguntas(perguntas: Pergunta[]): string {
+  const linhas = perguntas
+    .map(
+      (p) => `<tr>
+        <td>${escapeHtml(p.texto)}</td>
+        <td>${escapeHtml(LABEL_TIPO_PERGUNTA[p.tipo] ?? p.tipo)}</td>
+        <td>${p.obrigatoria ? "Sim" : "Não"}</td>
+        <td>${p.somenteComInstrutor ? "Sim" : "Não"}</td>
+        <td><span class="badge badge-${p.ativa ? "ativa" : "encerrada"}">${p.ativa ? "Ativa" : "Inativa"}</span></td>
+        <td class="acoes">
+          <a href="/admin/perguntas/${p.id}/editar">Editar</a>
+          <form method="post" action="/admin/perguntas/${p.id}/status" class="inline-form">
+            <input type="hidden" name="ativa" value="${p.ativa ? "0" : "1"}">
+            <button type="submit" class="link-button">${p.ativa ? "Desativar" : "Reativar"}</button>
+          </form>
+        </td>
+      </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: "Perguntas do formulário",
+    nav: "admin",
+    body: `
+      <div class="page-header">
+        <h1>Perguntas do formulário de avaliação</h1>
+        <a class="button" href="/admin/perguntas/nova">Nova pergunta</a>
+      </div>
+      <p class="ajuda">Este é o template único usado por todos os cursos. Perguntas desativadas somem dos
+      formulários novos, mas as respostas já registradas continuam disponíveis nos resultados.</p>
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr><th>Pergunta</th><th>Tipo</th><th>Obrigatória</th><th>Somente c/ instrutor</th><th>Status</th><th>Ações</th></tr>
+          </thead>
+          <tbody>${linhas || `<tr><td colspan="6">Nenhuma pergunta cadastrada.</td></tr>`}</tbody>
+        </table>
+      </section>`,
+  });
+}
+
+interface FormularioPergunta {
+  erros?: string[];
+  valores?: Record<string, string>;
+}
+
+export function paginaNovaPergunta({ erros = [], valores = {} }: FormularioPergunta = {}): string {
+  return layout({
+    title: "Nova pergunta",
+    nav: "admin",
+    body: `
+      <h1>Nova pergunta</h1>
+      ${listaErros(erros)}
+      <form method="post" action="/admin/perguntas" class="card">
+        <div class="campo">
+          <label for="texto">Texto da pergunta</label>
+          <textarea id="texto" name="texto" maxlength="500" rows="2" required>${escapeHtml(valores.texto ?? "")}</textarea>
+        </div>
+        <div class="campo">
+          <label for="tipo">Tipo de resposta</label>
+          <select id="tipo" name="tipo" data-tipo-pergunta required>
+            <option value="">Selecione...</option>
+            <option value="escala_1_10" ${opcaoSelecionada(valores.tipo, "escala_1_10")}>Escala de 1 a 10</option>
+            <option value="sim_nao" ${opcaoSelecionada(valores.tipo, "sim_nao")}>Sim/Não</option>
+            <option value="multipla_escolha" ${opcaoSelecionada(valores.tipo, "multipla_escolha")}>Múltipla escolha</option>
+            <option value="texto_livre" ${opcaoSelecionada(valores.tipo, "texto_livre")}>Texto livre</option>
+          </select>
+        </div>
+        <div class="campo" data-campo-opcoes-pergunta>
+          <label for="opcoes">Opções (uma por linha)</label>
+          <textarea id="opcoes" name="opcoes" rows="4">${escapeHtml(valores.opcoes ?? "")}</textarea>
+          <p class="ajuda">Depois de criada, as opções não podem mais ser editadas. Para mudar as opções, desative esta pergunta e crie uma nova.</p>
+        </div>
+        <div class="campo">
+          <label><input type="checkbox" name="obrigatoria" ${valores.obrigatoria === undefined || valores.obrigatoria === "on" ? "checked" : ""}> Resposta obrigatória</label>
+        </div>
+        <div class="campo">
+          <label><input type="checkbox" name="somente_com_instrutor" ${valores.somente_com_instrutor === "on" ? "checked" : ""}> Perguntar somente quando a capacitação tiver instrutor/tutor</label>
+        </div>
+        <button type="submit" class="button">Cadastrar</button>
+      </form>`,
+    scripts: ["/js/form.js"],
+  });
+}
+
+export function paginaEditarPergunta(pergunta: Pergunta, { erros = [], valores = {} }: FormularioPergunta = {}): string {
+  const v = {
+    texto: valores.texto ?? pergunta.texto,
+    obrigatoria: valores.obrigatoria ?? (pergunta.obrigatoria ? "on" : ""),
+    somente_com_instrutor: valores.somente_com_instrutor ?? (pergunta.somenteComInstrutor ? "on" : ""),
+  };
+
+  return layout({
+    title: "Editar pergunta",
+    nav: "admin",
+    body: `
+      <h1>Editar pergunta</h1>
+      ${listaErros(erros)}
+      <form method="post" action="/admin/perguntas/${pergunta.id}/editar" class="card">
+        <div class="campo">
+          <label>Tipo de resposta</label>
+          <input type="text" value="${escapeHtml(LABEL_TIPO_PERGUNTA[pergunta.tipo] ?? pergunta.tipo)}" disabled>
+          <p class="ajuda">O tipo não pode ser alterado depois de criada.</p>
+        </div>
+        ${
+          pergunta.tipo === "multipla_escolha"
+            ? `<div class="campo">
+                <label>Opções</label>
+                <p>${pergunta.opcoes.map((o) => escapeHtml(o.texto)).join(", ")}</p>
+              </div>`
+            : ""
+        }
+        <div class="campo">
+          <label for="texto">Texto da pergunta</label>
+          <textarea id="texto" name="texto" maxlength="500" rows="2" required>${escapeHtml(v.texto)}</textarea>
+        </div>
+        <div class="campo">
+          <label><input type="checkbox" name="obrigatoria" ${v.obrigatoria === "on" ? "checked" : ""}> Resposta obrigatória</label>
+        </div>
+        <div class="campo">
+          <label><input type="checkbox" name="somente_com_instrutor" ${v.somente_com_instrutor === "on" ? "checked" : ""}> Perguntar somente quando a capacitação tiver instrutor/tutor</label>
+        </div>
+        <button type="submit" class="button">Salvar</button>
       </form>`,
   });
 }

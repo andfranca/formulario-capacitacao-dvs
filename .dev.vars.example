@@ -10,3 +10,8 @@ SESSION_SECRET=troque-este-segredo-aleatorio
 # oficial da Cloudflare que sempre passa na validação (não é um segredo real):
 # https://developers.cloudflare.com/turnstile/troubleshooting/testing/
 TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+
+# O wrangler.jsonc já traz uma Site Key real de produção em "vars". Para
+# desenvolvimento local, sobrescreva-a aqui pela Site Key de teste correspondente
+# (senão o widget do Turnstile tenta validar de verdade e não funciona em localhost).
+TURNSTILE_SITE_KEY=1x00000000000000000000AA

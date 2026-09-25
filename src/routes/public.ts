@@ -4,7 +4,8 @@ import { buscarCapacitacaoPorCodigo } from "../services/capacitacoes";
 import { criarAvaliacao } from "../services/avaliacoes";
 import { verificarTurnstile } from "../services/turnstile";
 import { gerarQrCodeSvg } from "../services/qrcode";
-import { validarNovaAvaliacao } from "../utils/validation";
+import { listarPerguntas, perguntasAplicaveis } from "../services/perguntas";
+import { validarParticipante, validarRespostas } from "../utils/validation";
 import { tipoTemInstrutor } from "../data/tipos";
 import { paginaInicial, paginaNaoEncontrada, paginaEncerrada, paginaAvaliacao, paginaConfirmacaoResposta } from "../views/public";
 
@@ -19,10 +20,13 @@ publicRoutes.get("/avaliar/:codigo", async (c) => {
   if (!cap) return c.html(paginaNaoEncontrada(), 404);
   if (cap.status === "encerrada") return c.html(paginaEncerrada());
 
+  const todasPerguntas = await listarPerguntas(c.env.DB, { apenasAtivas: true });
+  const perguntas = perguntasAplicaveis(todasPerguntas, tipoTemInstrutor(cap.tipo));
+
   return c.html(
     paginaAvaliacao({
       cap,
-      q5Aplicavel: tipoTemInstrutor(cap.tipo),
+      perguntas,
       turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
     }),
   );
@@ -34,21 +38,28 @@ publicRoutes.post("/avaliar/:codigo", async (c) => {
   if (!cap) return c.html(paginaNaoEncontrada(), 404);
   if (cap.status === "encerrada") return c.html(paginaEncerrada());
 
-  const q5Aplicavel = tipoTemInstrutor(cap.tipo);
+  const todasPerguntas = await listarPerguntas(c.env.DB, { apenasAtivas: true });
+  const perguntas = perguntasAplicaveis(todasPerguntas, tipoTemInstrutor(cap.tipo));
+
   const body = (await c.req.parseBody()) as Record<string, unknown>;
 
   const turnstileToken = typeof body["cf-turnstile-response"] === "string" ? (body["cf-turnstile-response"] as string) : undefined;
   const turnstileOk = await verificarTurnstile(c.env.TURNSTILE_SECRET_KEY, turnstileToken, c.req.header("CF-Connecting-IP"));
 
-  const resultado = validarNovaAvaliacao(body, q5Aplicavel);
+  const resultadoParticipante = validarParticipante(body);
+  const resultadoRespostas = validarRespostas(body, perguntas);
 
-  if (!turnstileOk || !resultado.valid) {
-    const erros = [...(resultado.valid ? [] : resultado.errors), ...(turnstileOk ? [] : ["Verificação de segurança falhou. Tente novamente."])];
+  if (!turnstileOk || !resultadoParticipante.valid || !resultadoRespostas.valid) {
+    const erros = [
+      ...(resultadoParticipante.valid ? [] : resultadoParticipante.errors),
+      ...(resultadoRespostas.valid ? [] : resultadoRespostas.errors),
+      ...(turnstileOk ? [] : ["Verificação de segurança falhou. Tente novamente."]),
+    ];
     const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
     return c.html(
       paginaAvaliacao({
         cap,
-        q5Aplicavel,
+        perguntas,
         turnstileSiteKey: c.env.TURNSTILE_SITE_KEY,
         erros,
         valores,
@@ -57,7 +68,7 @@ publicRoutes.post("/avaliar/:codigo", async (c) => {
     );
   }
 
-  await criarAvaliacao(c.env.DB, cap.id, resultado.data);
+  await criarAvaliacao(c.env.DB, cap.id, resultadoParticipante.data, resultadoRespostas.data);
   return c.redirect(`/avaliar/${encodeURIComponent(codigo)}/obrigado`, 303);
 });
 

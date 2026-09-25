@@ -2,6 +2,7 @@ import { isAreaValida } from "../data/areas";
 import { isTipoValido, tipoTemInstrutor } from "../data/tipos";
 import { isCrsValido } from "../data/crs";
 import { isMunicipioValido } from "../data/municipios-rs";
+import type { Pergunta, TipoPergunta } from "../services/perguntas";
 
 export type ValidationResult<T> = { valid: true; data: T } | { valid: false; errors: string[] };
 
@@ -11,7 +12,8 @@ export const LIMITES = {
   nome: 150,
   email: 254,
   curso: 200,
-  comentario: 2000,
+  perguntaTexto: 500,
+  textoLivreResposta: 2000,
 } as const;
 
 function isDataValida(valor: string): boolean {
@@ -103,7 +105,7 @@ export function validarEdicaoCapacitacao(body: Record<string, unknown>): Validat
   return { valid: true, data: { ...comuns, status: status as "ativa" | "encerrada" } };
 }
 
-export interface NovaAvaliacaoInput {
+export interface ParticipanteInput {
   nome: string | null;
   email: string | null;
   tipo_servidor: "municipal" | "estadual";
@@ -111,29 +113,9 @@ export interface NovaAvaliacaoInput {
   crs: string | null;
   formacao: "ensino_medio" | "tecnico" | "superior";
   curso: string | null;
-  q1: number;
-  q2: number;
-  q3: number;
-  q4: number;
-  q5: number | null;
-  tempo: "insuficiente" | "adequado" | "longo";
-  comentario: string | null;
 }
 
-function validarNota(valor: unknown, campo: string, errors: string[]): number | null {
-  const n = Number(valor);
-  if (!Number.isInteger(n) || n < 1 || n > 10) {
-    errors.push(`${campo} deve ser uma nota inteira entre 1 e 10.`);
-    return null;
-  }
-  return n;
-}
-
-// q5Aplicavel deve vir de uma consulta ao backend sobre a capacitação (nunca do participante).
-export function validarNovaAvaliacao(
-  body: Record<string, unknown>,
-  q5Aplicavel: boolean,
-): ValidationResult<NovaAvaliacaoInput> {
+export function validarParticipante(body: Record<string, unknown>): ValidationResult<ParticipanteInput> {
   const errors: string[] = [];
 
   const nome = body.nome ? String(body.nome).trim().slice(0, LIMITES.nome) || null : null;
@@ -171,28 +153,6 @@ export function validarNovaAvaliacao(
     curso = null;
   }
 
-  const q1 = validarNota(body.q1, "Q1", errors);
-  const q2 = validarNota(body.q2, "Q2", errors);
-  const q3 = validarNota(body.q3, "Q3", errors);
-  const q4 = validarNota(body.q4, "Q4", errors);
-
-  let q5: number | null = null;
-  if (q5Aplicavel) {
-    q5 = validarNota(body.q5, "Q5", errors);
-  }
-
-  const tempo = String(body.tempo ?? "").trim();
-  if (!["insuficiente", "adequado", "longo"].includes(tempo)) errors.push("Resposta sobre o tempo da capacitação inválida.");
-
-  let comentario: string | null = body.comentario ? String(body.comentario).trim() : null;
-  if (comentario) {
-    if (comentario.length > LIMITES.comentario) {
-      errors.push(`Comentário deve ter no máximo ${LIMITES.comentario} caracteres.`);
-    }
-  } else {
-    comentario = null;
-  }
-
   if (errors.length > 0) return { valid: false, errors };
 
   return {
@@ -205,15 +165,133 @@ export function validarNovaAvaliacao(
       crs,
       formacao: formacao as "ensino_medio" | "tecnico" | "superior",
       curso,
-      q1: q1 as number,
-      q2: q2 as number,
-      q3: q3 as number,
-      q4: q4 as number,
-      q5,
-      tempo: tempo as "insuficiente" | "adequado" | "longo",
-      comentario,
     },
   };
+}
+
+export interface RespostaInput {
+  perguntaId: number;
+  valor: string;
+}
+
+// perguntas deve conter apenas as perguntas já filtradas como aplicáveis a esta
+// capacitação (ativas + regra "somente com instrutor" resolvida pelo backend).
+export function validarRespostas(body: Record<string, unknown>, perguntas: Pergunta[]): ValidationResult<RespostaInput[]> {
+  const errors: string[] = [];
+  const respostas: RespostaInput[] = [];
+
+  for (const p of perguntas) {
+    const bruto = body[`pergunta_${p.id}`];
+
+    if (p.tipo === "escala_1_10") {
+      if (bruto === undefined || bruto === "") {
+        if (p.obrigatoria) errors.push(`"${p.texto}" é obrigatória.`);
+        continue;
+      }
+      const n = Number(bruto);
+      if (!Number.isInteger(n) || n < 1 || n > 10) {
+        errors.push(`"${p.texto}" deve ser uma nota inteira entre 1 e 10.`);
+      } else {
+        respostas.push({ perguntaId: p.id, valor: String(n) });
+      }
+    } else if (p.tipo === "sim_nao") {
+      const v = String(bruto ?? "");
+      if (!v) {
+        if (p.obrigatoria) errors.push(`"${p.texto}" é obrigatória.`);
+        continue;
+      }
+      if (v !== "sim" && v !== "nao") {
+        errors.push(`"${p.texto}" é inválida.`);
+      } else {
+        respostas.push({ perguntaId: p.id, valor: v });
+      }
+    } else if (p.tipo === "multipla_escolha") {
+      const v = String(bruto ?? "");
+      if (!v) {
+        if (p.obrigatoria) errors.push(`"${p.texto}" é obrigatória.`);
+        continue;
+      }
+      if (!p.opcoes.some((o) => String(o.id) === v)) {
+        errors.push(`"${p.texto}" é inválida.`);
+      } else {
+        respostas.push({ perguntaId: p.id, valor: v });
+      }
+    } else {
+      const v = String(bruto ?? "").trim();
+      if (!v) {
+        if (p.obrigatoria) errors.push(`"${p.texto}" é obrigatória.`);
+        continue;
+      }
+      if (v.length > LIMITES.textoLivreResposta) {
+        errors.push(`"${p.texto}" deve ter no máximo ${LIMITES.textoLivreResposta} caracteres.`);
+      } else {
+        respostas.push({ perguntaId: p.id, valor: v });
+      }
+    }
+  }
+
+  if (errors.length > 0) return { valid: false, errors };
+  return { valid: true, data: respostas };
+}
+
+export interface NovaPerguntaFormInput {
+  texto: string;
+  tipo: TipoPergunta;
+  obrigatoria: boolean;
+  somenteComInstrutor: boolean;
+  opcoes: string[];
+}
+
+const TIPOS_PERGUNTA: TipoPergunta[] = ["escala_1_10", "sim_nao", "multipla_escolha", "texto_livre"];
+
+function isChecked(valor: unknown): boolean {
+  return valor === "on" || valor === "true" || valor === "1";
+}
+
+export function validarNovaPergunta(body: Record<string, unknown>): ValidationResult<NovaPerguntaFormInput> {
+  const errors: string[] = [];
+
+  const texto = String(body.texto ?? "").trim();
+  if (!texto) errors.push("Texto da pergunta é obrigatório.");
+  if (texto.length > LIMITES.perguntaTexto) errors.push(`Texto da pergunta deve ter no máximo ${LIMITES.perguntaTexto} caracteres.`);
+
+  const tipo = String(body.tipo ?? "").trim() as TipoPergunta;
+  if (!TIPOS_PERGUNTA.includes(tipo)) errors.push("Tipo de pergunta inválido.");
+
+  const obrigatoria = isChecked(body.obrigatoria);
+  const somenteComInstrutor = isChecked(body.somente_com_instrutor);
+
+  let opcoesTexto: string[] = [];
+  if (tipo === "multipla_escolha") {
+    opcoesTexto = String(body.opcoes ?? "")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (opcoesTexto.length < 2) errors.push("Informe ao menos duas opções, uma por linha.");
+  }
+
+  if (errors.length > 0) return { valid: false, errors };
+  return { valid: true, data: { texto, tipo, obrigatoria, somenteComInstrutor, opcoes: opcoesTexto } };
+}
+
+export interface EdicaoPerguntaFormInput {
+  texto: string;
+  obrigatoria: boolean;
+  somenteComInstrutor: boolean;
+}
+
+export function validarEdicaoPergunta(body: Record<string, unknown>): ValidationResult<EdicaoPerguntaFormInput> {
+  const errors: string[] = [];
+
+  const texto = String(body.texto ?? "").trim();
+  if (!texto) errors.push("Texto da pergunta é obrigatório.");
+  if (texto.length > LIMITES.perguntaTexto) errors.push(`Texto da pergunta deve ter no máximo ${LIMITES.perguntaTexto} caracteres.`);
+
+  const obrigatoria = isChecked(body.obrigatoria);
+  const somenteComInstrutor = isChecked(body.somente_com_instrutor);
+
+  if (errors.length > 0) return { valid: false, errors };
+  return { valid: true, data: { texto, obrigatoria, somenteComInstrutor } };
 }
 
 export interface NovoCriadorInput {

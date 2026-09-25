@@ -8,12 +8,26 @@ import {
   atualizarCapacitacao,
   alternarStatusCapacitacao,
 } from "../services/capacitacoes";
-import { listarAvaliacoesPorCapacitacao } from "../services/avaliacoes";
-import { calcularEstatisticasResultados } from "../services/resultados";
+import { contarRespostas, buscarRespostasPorCapacitacao } from "../services/avaliacoes";
+import { calcularResultadosPerguntas } from "../services/resultados";
 import { calcularIndicadoresPainel } from "../services/painel";
 import { exportarCapacitacoesCsv, exportarAvaliacoesCsv, exportarConsolidadoCsv } from "../services/exportacao";
 import { criarCriador, listarCriadores, excluirCriador } from "../services/usuarios";
-import { validarNovaCapacitacao, validarEdicaoCapacitacao, validarNovoCriador } from "../utils/validation";
+import {
+  listarPerguntas,
+  buscarPerguntaPorId,
+  perguntasParaResultados,
+  criarPergunta,
+  atualizarPergunta,
+  alternarAtivaPergunta,
+} from "../services/perguntas";
+import {
+  validarNovaCapacitacao,
+  validarEdicaoCapacitacao,
+  validarNovoCriador,
+  validarNovaPergunta,
+  validarEdicaoPergunta,
+} from "../utils/validation";
 import { isUniqueConstraintError } from "../services/codigo";
 import { tipoTemInstrutor } from "../data/tipos";
 import {
@@ -25,6 +39,9 @@ import {
   paginaPainel,
   paginaListaCriadores,
   paginaNovoCriador,
+  paginaListaPerguntas,
+  paginaNovaPergunta,
+  paginaEditarPergunta,
 } from "../views/admin";
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
@@ -101,9 +118,15 @@ adminRoutes.get("/capacitacoes/:id/resultados", async (c) => {
   const cap = await buscarCapacitacaoPorId(c.env.DB, id);
   if (!cap) return c.notFound();
 
-  const avaliacoes = await listarAvaliacoesPorCapacitacao(c.env.DB, id);
-  const stats = calcularEstatisticasResultados(avaliacoes, tipoTemInstrutor(cap.tipo));
-  return c.html(paginaResultados(cap, stats));
+  const [totalRespostas, respostasBrutas, todasPerguntas] = await Promise.all([
+    contarRespostas(c.env.DB, id),
+    buscarRespostasPorCapacitacao(c.env.DB, id),
+    listarPerguntas(c.env.DB),
+  ]);
+  const idsComResposta = new Set(respostasBrutas.map((r) => r.pergunta_id));
+  const perguntas = perguntasParaResultados(todasPerguntas, tipoTemInstrutor(cap.tipo), idsComResposta);
+  const resultados = calcularResultadosPerguntas(perguntas, respostasBrutas);
+  return c.html(paginaResultados(cap, totalRespostas, resultados));
 });
 
 adminRoutes.get("/painel", async (c) => {
@@ -174,4 +197,55 @@ adminRoutes.post("/criadores/:id/excluir", async (c) => {
   const id = Number(c.req.param("id"));
   await excluirCriador(c.env.DB, id);
   return c.redirect("/admin/criadores", 303);
+});
+
+adminRoutes.get("/perguntas", async (c) => {
+  const perguntas = await listarPerguntas(c.env.DB);
+  return c.html(paginaListaPerguntas(perguntas));
+});
+
+adminRoutes.get("/perguntas/nova", (c) => c.html(paginaNovaPergunta()));
+
+adminRoutes.post("/perguntas", async (c) => {
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const resultado = validarNovaPergunta(body);
+
+  if (!resultado.valid) {
+    const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+    return c.html(paginaNovaPergunta({ erros: resultado.errors, valores }), 400);
+  }
+
+  await criarPergunta(c.env.DB, resultado.data);
+  return c.redirect("/admin/perguntas", 303);
+});
+
+adminRoutes.get("/perguntas/:id/editar", async (c) => {
+  const id = Number(c.req.param("id"));
+  const pergunta = await buscarPerguntaPorId(c.env.DB, id);
+  if (!pergunta) return c.notFound();
+  return c.html(paginaEditarPergunta(pergunta));
+});
+
+adminRoutes.post("/perguntas/:id/editar", async (c) => {
+  const id = Number(c.req.param("id"));
+  const pergunta = await buscarPerguntaPorId(c.env.DB, id);
+  if (!pergunta) return c.notFound();
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const resultado = validarEdicaoPergunta(body);
+
+  if (!resultado.valid) {
+    const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+    return c.html(paginaEditarPergunta(pergunta, { erros: resultado.errors, valores }), 400);
+  }
+
+  await atualizarPergunta(c.env.DB, id, resultado.data);
+  return c.redirect("/admin/perguntas", 303);
+});
+
+adminRoutes.post("/perguntas/:id/status", async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  await alternarAtivaPergunta(c.env.DB, id, String(body.ativa) === "1");
+  return c.redirect("/admin/perguntas", 303);
 });

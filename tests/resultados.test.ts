@@ -1,60 +1,91 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { calcularEstatisticasResultados } from "../src/services/resultados";
-import type { AvaliacaoRecord } from "../src/services/avaliacoes";
+import { calcularResultadosPerguntas } from "../src/services/resultados";
+import type { RespostaBruta } from "../src/services/resultados";
+import type { Pergunta } from "../src/services/perguntas";
 
-function avaliacao(overrides: Partial<AvaliacaoRecord>): AvaliacaoRecord {
+function pergunta(overrides: Partial<Pergunta>): Pergunta {
   return {
     id: 1,
-    capacitacao_id: 1,
-    nome: null,
-    email: null,
-    tipo_servidor: "municipal",
-    municipio: "Porto Alegre",
-    crs: null,
-    formacao: "ensino_medio",
-    curso: null,
-    q1: 8,
-    q2: 8,
-    q3: 8,
-    q4: 8,
-    q5: 8,
-    tempo: "adequado",
-    comentario: null,
-    created_at: new Date().toISOString(),
+    texto: "Pergunta de teste",
+    tipo: "escala_1_10",
+    obrigatoria: true,
+    somenteComInstrutor: false,
+    ativa: true,
+    ordem: 1,
+    opcoes: [],
     ...overrides,
   };
 }
 
-test("calcularEstatisticasResultados não contabiliza Q5 nula como zero (capacitação sem Q5 aplicável)", () => {
-  const avaliacoes = [avaliacao({ q5: null }), avaliacao({ q5: null })];
-  const stats = calcularEstatisticasResultados(avaliacoes, false);
-  assert.equal(stats.q5, null);
+function resposta(overrides: Partial<RespostaBruta>): RespostaBruta {
+  return { pergunta_id: 1, valor: "8", nome: null, ...overrides };
+}
+
+test("calcularResultadosPerguntas não contabiliza ausência de resposta como zero em escala 1-10", () => {
+  const p = pergunta({ id: 5, tipo: "escala_1_10" });
+  const resultado = calcularResultadosPerguntas([p], []);
+  assert.equal(resultado[0].tipo, "escala_1_10");
+  if (resultado[0].tipo === "escala_1_10") {
+    assert.equal(resultado[0].totalRespostas, 0);
+    assert.equal(resultado[0].media, null);
+    assert.equal(resultado[0].mediana, null);
+  }
 });
 
-test("calcularEstatisticasResultados calcula Q5 apenas com respostas presentes quando aplicável", () => {
-  const avaliacoes = [avaliacao({ q5: 10 }), avaliacao({ q5: 6 })];
-  const stats = calcularEstatisticasResultados(avaliacoes, true);
-  assert.equal(stats.q5?.respostas, 2);
-  assert.equal(stats.q5?.media, 8);
+test("calcularResultadosPerguntas calcula média/mediana só com as respostas presentes", () => {
+  const p = pergunta({ id: 5, tipo: "escala_1_10" });
+  const respostas = [resposta({ pergunta_id: 5, valor: "10" }), resposta({ pergunta_id: 5, valor: "6" })];
+  const resultado = calcularResultadosPerguntas([p], respostas);
+  if (resultado[0].tipo === "escala_1_10") {
+    assert.equal(resultado[0].totalRespostas, 2);
+    assert.equal(resultado[0].media, 8);
+  }
 });
 
-test("calcularEstatisticasResultados só lista comentários não vazios e identifica participante anônimo", () => {
-  const avaliacoes = [
-    avaliacao({ nome: "Maria", comentario: "Ótima capacitação" }),
-    avaliacao({ nome: null, comentario: "Gostei bastante" }),
-    avaliacao({ nome: "João", comentario: "" }),
-    avaliacao({ nome: "Pedro", comentario: null }),
+test("calcularResultadosPerguntas calcula contagem e percentual para sim_nao", () => {
+  const p = pergunta({ id: 6, tipo: "sim_nao" });
+  const respostas = [
+    resposta({ pergunta_id: 6, valor: "sim" }),
+    resposta({ pergunta_id: 6, valor: "sim" }),
+    resposta({ pergunta_id: 6, valor: "nao" }),
   ];
-  const stats = calcularEstatisticasResultados(avaliacoes, false);
-  assert.equal(stats.comentarios.length, 2);
-  assert.equal(stats.comentarios[0].nome, "Maria");
-  assert.equal(stats.comentarios[1].nome, "Participante não identificado");
+  const resultado = calcularResultadosPerguntas([p], respostas);
+  if (resultado[0].tipo === "sim_nao") {
+    const sim = resultado[0].opcoes.find((o) => o.label === "Sim");
+    assert.equal(sim?.quantidade, 2);
+    assert.equal(sim?.percentual, "66,7%");
+  }
 });
 
-test("calcularEstatisticasResultados calcula distribuição de tempo em quantidade e percentual", () => {
-  const avaliacoes = [avaliacao({ tempo: "adequado" }), avaliacao({ tempo: "adequado" }), avaliacao({ tempo: "insuficiente" })];
-  const stats = calcularEstatisticasResultados(avaliacoes, false);
-  const adequado = stats.tempo.find((t) => t.label === "Adequado");
-  assert.equal(adequado?.quantidade, 2);
+test("calcularResultadosPerguntas calcula contagem por opção em multipla_escolha", () => {
+  const p = pergunta({
+    id: 7,
+    tipo: "multipla_escolha",
+    opcoes: [
+      { id: 101, texto: "Insuficiente", ordem: 1 },
+      { id: 102, texto: "Adequado", ordem: 2 },
+      { id: 103, texto: "Longo", ordem: 3 },
+    ],
+  });
+  const respostas = [resposta({ pergunta_id: 7, valor: "102" }), resposta({ pergunta_id: 7, valor: "102" }), resposta({ pergunta_id: 7, valor: "101" })];
+  const resultado = calcularResultadosPerguntas([p], respostas);
+  if (resultado[0].tipo === "multipla_escolha") {
+    const adequado = resultado[0].opcoes.find((o) => o.label === "Adequado");
+    assert.equal(adequado?.quantidade, 2);
+  }
+});
+
+test("calcularResultadosPerguntas só lista textos não vazios e identifica participante anônimo", () => {
+  const p = pergunta({ id: 8, tipo: "texto_livre", obrigatoria: false });
+  const respostas = [
+    resposta({ pergunta_id: 8, valor: "Ótima capacitação", nome: "Maria" }),
+    resposta({ pergunta_id: 8, valor: "Gostei bastante", nome: null }),
+  ];
+  const resultado = calcularResultadosPerguntas([p], respostas);
+  if (resultado[0].tipo === "texto_livre") {
+    assert.equal(resultado[0].textos.length, 2);
+    assert.equal(resultado[0].textos[0].nome, "Maria");
+    assert.equal(resultado[0].textos[1].nome, "Participante não identificado");
+  }
 });

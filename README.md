@@ -37,13 +37,33 @@ tests/             # testes da lógica pura (node:test)
 
 - **Admin** (`/login`): senha única (`ADMIN_PASSWORD`), acesso total — cadastra,
   edita e encerra qualquer capacitação, vê resultados, painel geral, exporta
-  CSV, e cria/exclui contas de Criador de Curso em `/admin/criadores`.
+  CSV, cria/exclui contas de Criador de Curso em `/admin/criadores`, e
+  cria/edita/desativa as perguntas do formulário de avaliação em `/admin/perguntas`.
 - **Criador de Curso** (`/criador/login`): conta com e-mail e senha, criada
   pelo Admin em `/admin/criadores/novo`. Só cadastra novas capacitações e vê a
   lista + link/QR Code das que ele mesmo criou — sem acesso a edição,
   encerramento, resultados, painel ou exportação. Não há recuperação de senha
   nesta versão: se esquecer, o Admin cria uma nova senha excluindo e
   recriando a conta.
+
+## Perguntas do formulário de avaliação
+
+As perguntas não são mais fixas no código: é um template único, compartilhado
+por todas as capacitações, editável pelo Admin em `/admin/perguntas`. Cada
+pergunta tem um tipo — escala de 1 a 10, Sim/Não, múltipla escolha ou texto
+livre — e pode ser marcada como obrigatória e/ou "somente quando houver
+instrutor/tutor" (regra sempre decidida pelo backend a partir da capacitação,
+nunca pelo participante).
+
+- Uma pergunta desativada some dos formulários novos, mas as respostas já
+  registradas continuam aparecendo nos resultados e na exportação CSV daquela
+  capacitação.
+- As opções de uma pergunta de múltipla escolha ficam fixas depois de criada
+  (não há tela de edição de opções). Para mudar as opções, desative a pergunta
+  e crie uma nova — evita que uma edição corrompa o sentido de respostas já
+  registradas.
+- Novas perguntas sempre entram no fim do formulário (sem reordenação nesta
+  versão).
 
 ## Desenvolvimento local
 

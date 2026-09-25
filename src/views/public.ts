@@ -5,6 +5,7 @@ import { labelTipo } from "../data/tipos";
 import { MUNICIPIOS_RS } from "../data/municipios-rs";
 import { CRS_LIST } from "../data/crs";
 import type { CapacitacaoRecord } from "../services/capacitacoes";
+import type { Pergunta } from "../services/perguntas";
 
 export function paginaInicial(): string {
   return layout({
@@ -58,7 +59,7 @@ export function paginaConfirmacaoResposta(): string {
 
 interface DadosFormularioAvaliacao {
   cap: CapacitacaoRecord;
-  q5Aplicavel: boolean;
+  perguntas: Pergunta[];
   turnstileSiteKey: string;
   erros?: string[];
   valores?: Record<string, string>;
@@ -72,11 +73,11 @@ function marcado(valor: string | undefined, alvo: string): string {
   return valor === alvo ? "checked" : "";
 }
 
-function escalaNotas(nome: string, valorAtual: string | undefined): string {
+function escalaNotas(nome: string, valorAtual: string | undefined, obrigatoria: boolean): string {
   const opcoes = Array.from({ length: 10 }, (_, i) => i + 1)
     .map(
       (n) => `<label class="escala-opcao">
-        <input type="radio" name="${nome}" value="${n}" ${marcado(valorAtual, String(n))} required>
+        <input type="radio" name="${nome}" value="${n}" ${marcado(valorAtual, String(n))} ${obrigatoria ? "required" : ""}>
         <span>${n}</span>
       </label>`,
     )
@@ -84,7 +85,49 @@ function escalaNotas(nome: string, valorAtual: string | undefined): string {
   return `<div class="escala">${opcoes}</div>`;
 }
 
-export function paginaAvaliacao({ cap, q5Aplicavel, turnstileSiteKey, erros = [], valores = {} }: DadosFormularioAvaliacao): string {
+function renderizarPergunta(p: Pergunta, valorAtual: string | undefined): string {
+  const nome = `pergunta_${p.id}`;
+  const asterisco = p.obrigatoria ? " *" : "";
+
+  if (p.tipo === "escala_1_10") {
+    return `<div class="campo">
+      <label>${escapeHtml(p.texto)}${asterisco}</label>
+      ${escalaNotas(nome, valorAtual, p.obrigatoria)}
+    </div>`;
+  }
+
+  if (p.tipo === "sim_nao") {
+    return `<div class="campo">
+      <fieldset>
+        <legend>${escapeHtml(p.texto)}${asterisco}</legend>
+        <label><input type="radio" name="${nome}" value="sim" ${marcado(valorAtual, "sim")} ${p.obrigatoria ? "required" : ""}> Sim</label>
+        <label><input type="radio" name="${nome}" value="nao" ${marcado(valorAtual, "nao")}> Não</label>
+      </fieldset>
+    </div>`;
+  }
+
+  if (p.tipo === "multipla_escolha") {
+    const opcoes = p.opcoes
+      .map(
+        (o) =>
+          `<label><input type="radio" name="${nome}" value="${o.id}" ${marcado(valorAtual, String(o.id))} ${p.obrigatoria ? "required" : ""}> ${escapeHtml(o.texto)}</label>`,
+      )
+      .join("");
+    return `<div class="campo">
+      <fieldset>
+        <legend>${escapeHtml(p.texto)}${asterisco}</legend>
+        ${opcoes}
+      </fieldset>
+    </div>`;
+  }
+
+  return `<div class="campo">
+    <label for="${nome}">${escapeHtml(p.texto)}${asterisco}</label>
+    <textarea id="${nome}" name="${nome}" maxlength="2000" rows="4" ${p.obrigatoria ? "required" : ""}>${escapeHtml(valorAtual ?? "")}</textarea>
+  </div>`;
+}
+
+export function paginaAvaliacao({ cap, perguntas, turnstileSiteKey, erros = [], valores = {} }: DadosFormularioAvaliacao): string {
   const opcoesMunicipio = MUNICIPIOS_RS.map(
     (m) => `<option value="${escapeHtml(m)}" ${opcaoSelecionada(valores.municipio, m)}>${escapeHtml(m)}</option>`,
   ).join("");
@@ -173,44 +216,7 @@ export function paginaAvaliacao({ cap, q5Aplicavel, turnstileSiteKey, erros = []
         <h2>Avaliação</h2>
         <p>Marque sua percepção pessoal nas escalas abaixo: 1 (nem um pouco) a 10 (absolutamente).</p>
 
-        <div class="campo">
-          <label>Q1. Compreendi a importância do que foi abordado na capacitação para o trabalho na VISA.</label>
-          ${escalaNotas("q1", valores.q1)}
-        </div>
-        <div class="campo">
-          <label>Q2. O conteúdo preparado foi adequado? (Abrangeu os pontos relevantes na profundidade adequada.)</label>
-          ${escalaNotas("q2", valores.q2)}
-        </div>
-        <div class="campo">
-          <label>Q3. Compreendi como executar na prática profissional.</label>
-          ${escalaNotas("q3", valores.q3)}
-        </div>
-        <div class="campo">
-          <label>Q4. As estratégias de ensino utilizadas na capacitação facilitaram o aprendizado.</label>
-          ${escalaNotas("q4", valores.q4)}
-        </div>
-        ${
-          q5Aplicavel
-            ? `<div class="campo">
-                <label>Q5. O instrutor ou tutor foi solícito.</label>
-                ${escalaNotas("q5", valores.q5)}
-              </div>`
-            : ""
-        }
-
-        <div class="campo">
-          <fieldset>
-            <legend>O tempo destinado à capacitação foi:</legend>
-            <label><input type="radio" name="tempo" value="insuficiente" ${marcado(valores.tempo, "insuficiente")} required> Insuficiente</label>
-            <label><input type="radio" name="tempo" value="adequado" ${marcado(valores.tempo, "adequado")}> Adequado</label>
-            <label><input type="radio" name="tempo" value="longo" ${marcado(valores.tempo, "longo")}> Longo</label>
-          </fieldset>
-        </div>
-
-        <div class="campo">
-          <label for="comentario">Caso desejar, deixe comentários complementares.</label>
-          <textarea id="comentario" name="comentario" maxlength="2000" rows="4">${escapeHtml(valores.comentario ?? "")}</textarea>
-        </div>
+        ${perguntas.map((p) => renderizarPergunta(p, valores[`pergunta_${p.id}`])).join("")}
 
         <div class="campo cf-turnstile" data-sitekey="${escapeHtml(turnstileSiteKey)}"></div>
 

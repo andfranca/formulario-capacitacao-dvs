@@ -1,4 +1,4 @@
-import type { NovaAvaliacaoInput } from "../utils/validation";
+import type { ParticipanteInput, RespostaInput } from "../utils/validation";
 
 export interface AvaliacaoRecord {
   id: number;
@@ -10,51 +10,46 @@ export interface AvaliacaoRecord {
   crs: string | null;
   formacao: "ensino_medio" | "tecnico" | "superior";
   curso: string | null;
-  q1: number;
-  q2: number;
-  q3: number;
-  q4: number;
-  q5: number | null;
-  tempo: "insuficiente" | "adequado" | "longo";
-  comentario: string | null;
   created_at: string;
 }
 
 export async function criarAvaliacao(
   db: D1Database,
   capacitacaoId: number,
-  input: NovaAvaliacaoInput,
+  participante: ParticipanteInput,
+  respostas: RespostaInput[],
 ): Promise<AvaliacaoRecord> {
   const nowIso = new Date().toISOString();
-  const row = await db
+  const avaliacao = await db
     .prepare(
       `INSERT INTO avaliacoes
-        (capacitacao_id, nome, email, tipo_servidor, municipio, crs, formacao, curso,
-         q1, q2, q3, q4, q5, tempo, comentario, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (capacitacao_id, nome, email, tipo_servidor, municipio, crs, formacao, curso, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
        RETURNING *`,
     )
     .bind(
       capacitacaoId,
-      input.nome,
-      input.email,
-      input.tipo_servidor,
-      input.municipio,
-      input.crs,
-      input.formacao,
-      input.curso,
-      input.q1,
-      input.q2,
-      input.q3,
-      input.q4,
-      input.q5,
-      input.tempo,
-      input.comentario,
+      participante.nome,
+      participante.email,
+      participante.tipo_servidor,
+      participante.municipio,
+      participante.crs,
+      participante.formacao,
+      participante.curso,
       nowIso,
     )
     .first<AvaliacaoRecord>();
-  if (!row) throw new Error("Falha ao registrar avaliação.");
-  return row;
+  if (!avaliacao) throw new Error("Falha ao registrar avaliação.");
+
+  if (respostas.length > 0) {
+    await db.batch(
+      respostas.map((r) =>
+        db.prepare(`INSERT INTO respostas (avaliacao_id, pergunta_id, valor) VALUES (?, ?, ?)`).bind(avaliacao.id, r.perguntaId, r.valor),
+      ),
+    );
+  }
+
+  return avaliacao;
 }
 
 export async function contarRespostas(db: D1Database, capacitacaoId: number): Promise<number> {
@@ -70,5 +65,21 @@ export async function listarAvaliacoesPorCapacitacao(db: D1Database, capacitacao
     .prepare(`SELECT * FROM avaliacoes WHERE capacitacao_id = ? ORDER BY created_at ASC`)
     .bind(capacitacaoId)
     .all<AvaliacaoRecord>();
+  return results;
+}
+
+export async function buscarRespostasPorCapacitacao(
+  db: D1Database,
+  capacitacaoId: number,
+): Promise<{ pergunta_id: number; valor: string; nome: string | null }[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT r.pergunta_id, r.valor, a.nome
+       FROM respostas r
+       JOIN avaliacoes a ON a.id = r.avaliacao_id
+       WHERE a.capacitacao_id = ?`,
+    )
+    .bind(capacitacaoId)
+    .all<{ pergunta_id: number; valor: string; nome: string | null }>();
   return results;
 }

@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validarNovaCapacitacao, validarEdicaoCapacitacao, validarNovaAvaliacao, validarNovoCriador } from "../src/utils/validation";
+import {
+  validarNovaCapacitacao,
+  validarEdicaoCapacitacao,
+  validarParticipante,
+  validarRespostas,
+  validarNovoCriador,
+  validarNovaPergunta,
+  validarEdicaoPergunta,
+} from "../src/utils/validation";
+import type { Pergunta } from "../src/services/perguntas";
 
 const CAPACITACAO_BASE = {
   titulo: "Boas práticas em vigilância sanitária",
@@ -57,20 +66,14 @@ test("validarEdicaoCapacitacao rejeita status inválido", () => {
   assert.equal(resultado.valid, false);
 });
 
-const AVALIACAO_BASE = {
+const PARTICIPANTE_BASE = {
   tipo_servidor: "municipal",
   municipio: "Porto Alegre",
   formacao: "ensino_medio",
-  q1: "8",
-  q2: "9",
-  q3: "7",
-  q4: "10",
-  q5: "9",
-  tempo: "adequado",
 };
 
-test("validarNovaAvaliacao aceita formulário municipal válido", () => {
-  const resultado = validarNovaAvaliacao(AVALIACAO_BASE, true);
+test("validarParticipante aceita formulário municipal válido", () => {
+  const resultado = validarParticipante(PARTICIPANTE_BASE);
   assert.equal(resultado.valid, true);
   if (resultado.valid) {
     assert.equal(resultado.data.municipio, "Porto Alegre");
@@ -78,13 +81,13 @@ test("validarNovaAvaliacao aceita formulário municipal válido", () => {
   }
 });
 
-test("validarNovaAvaliacao exige município válido do RS quando municipal", () => {
-  const resultado = validarNovaAvaliacao({ ...AVALIACAO_BASE, municipio: "Cidade Inexistente" }, true);
+test("validarParticipante exige município válido do RS quando municipal", () => {
+  const resultado = validarParticipante({ ...PARTICIPANTE_BASE, municipio: "Cidade Inexistente" });
   assert.equal(resultado.valid, false);
 });
 
-test("validarNovaAvaliacao aceita formulário estadual válido com CRS", () => {
-  const resultado = validarNovaAvaliacao({ ...AVALIACAO_BASE, tipo_servidor: "estadual", municipio: "", crs: "3ª CRS" }, true);
+test("validarParticipante aceita formulário estadual válido com CRS", () => {
+  const resultado = validarParticipante({ ...PARTICIPANTE_BASE, tipo_servidor: "estadual", municipio: "", crs: "3ª CRS" });
   assert.equal(resultado.valid, true);
   if (resultado.valid) {
     assert.equal(resultado.data.crs, "3ª CRS");
@@ -92,36 +95,91 @@ test("validarNovaAvaliacao aceita formulário estadual válido com CRS", () => {
   }
 });
 
-test("validarNovaAvaliacao exige CRS válida quando estadual", () => {
-  const resultado = validarNovaAvaliacao({ ...AVALIACAO_BASE, tipo_servidor: "estadual", crs: "99ª CRS" }, true);
+test("validarParticipante exige CRS válida quando estadual", () => {
+  const resultado = validarParticipante({ ...PARTICIPANTE_BASE, tipo_servidor: "estadual", crs: "99ª CRS" });
   assert.equal(resultado.valid, false);
 });
 
-test("validarNovaAvaliacao exige nome do curso quando formação é Técnico ou Superior", () => {
-  const semCurso = validarNovaAvaliacao({ ...AVALIACAO_BASE, formacao: "tecnico" }, true);
+test("validarParticipante exige nome do curso quando formação é Técnico ou Superior", () => {
+  const semCurso = validarParticipante({ ...PARTICIPANTE_BASE, formacao: "tecnico" });
   assert.equal(semCurso.valid, false);
 
-  const comCurso = validarNovaAvaliacao({ ...AVALIACAO_BASE, formacao: "superior", curso: "Engenharia" }, true);
+  const comCurso = validarParticipante({ ...PARTICIPANTE_BASE, formacao: "superior", curso: "Engenharia" });
   assert.equal(comCurso.valid, true);
 });
 
-test("validarNovaAvaliacao valida escala de 1 a 10 para Q1-Q4", () => {
-  const notaZero = validarNovaAvaliacao({ ...AVALIACAO_BASE, q1: "0" }, true);
+function pergunta(overrides: Partial<Pergunta>): Pergunta {
+  return {
+    id: 1,
+    texto: "Pergunta de teste",
+    tipo: "escala_1_10",
+    obrigatoria: true,
+    somenteComInstrutor: false,
+    ativa: true,
+    ordem: 1,
+    opcoes: [],
+    ...overrides,
+  };
+}
+
+test("validarRespostas valida escala de 1 a 10", () => {
+  const p = pergunta({ id: 1, tipo: "escala_1_10" });
+  const notaZero = validarRespostas({ pergunta_1: "0" }, [p]);
   assert.equal(notaZero.valid, false);
 
-  const notaOnze = validarNovaAvaliacao({ ...AVALIACAO_BASE, q1: "11" }, true);
+  const notaOnze = validarRespostas({ pergunta_1: "11" }, [p]);
   assert.equal(notaOnze.valid, false);
+
+  const notaValida = validarRespostas({ pergunta_1: "8" }, [p]);
+  assert.equal(notaValida.valid, true);
 });
 
-test("validarNovaAvaliacao ignora Q5 quando não aplicável (autoinstrucional sem tutor) e mantém null", () => {
-  const { q5, ...semQ5 } = AVALIACAO_BASE;
-  const resultado = validarNovaAvaliacao(semQ5, false);
+test("validarRespostas ignora pergunta não aplicável (não passada na lista) e não gera erro", () => {
+  const resultado = validarRespostas({}, []);
   assert.equal(resultado.valid, true);
-  if (resultado.valid) assert.equal(resultado.data.q5, null);
+  if (resultado.valid) assert.equal(resultado.data.length, 0);
 });
 
-test("validarNovaAvaliacao exige Q5 entre 1 e 10 quando aplicável", () => {
-  const resultado = validarNovaAvaliacao({ ...AVALIACAO_BASE, q5: "" }, true);
+test("validarRespostas exige resposta quando a pergunta é obrigatória", () => {
+  const p = pergunta({ id: 2, tipo: "texto_livre", obrigatoria: true });
+  const resultado = validarRespostas({}, [p]);
+  assert.equal(resultado.valid, false);
+});
+
+test("validarRespostas aceita pergunta opcional sem resposta", () => {
+  const p = pergunta({ id: 3, tipo: "texto_livre", obrigatoria: false });
+  const resultado = validarRespostas({}, [p]);
+  assert.equal(resultado.valid, true);
+  if (resultado.valid) assert.equal(resultado.data.length, 0);
+});
+
+test("validarRespostas valida opção de múltipla escolha contra a lista de opções da pergunta", () => {
+  const p = pergunta({
+    id: 4,
+    tipo: "multipla_escolha",
+    opcoes: [
+      { id: 10, texto: "Insuficiente", ordem: 1 },
+      { id: 11, texto: "Adequado", ordem: 2 },
+    ],
+  });
+  const valida = validarRespostas({ pergunta_4: "11" }, [p]);
+  assert.equal(valida.valid, true);
+
+  const invalida = validarRespostas({ pergunta_4: "999" }, [p]);
+  assert.equal(invalida.valid, false);
+});
+
+test("validarNovaPergunta exige ao menos duas opções para múltipla escolha", () => {
+  const semOpcoes = validarNovaPergunta({ texto: "Como foi?", tipo: "multipla_escolha", opcoes: "Só uma" });
+  assert.equal(semOpcoes.valid, false);
+
+  const comOpcoes = validarNovaPergunta({ texto: "Como foi?", tipo: "multipla_escolha", opcoes: "Ruim\nBom\nÓtimo" });
+  assert.equal(comOpcoes.valid, true);
+  if (comOpcoes.valid) assert.deepEqual(comOpcoes.data.opcoes, ["Ruim", "Bom", "Ótimo"]);
+});
+
+test("validarEdicaoPergunta exige texto não vazio", () => {
+  const resultado = validarEdicaoPergunta({ texto: "" });
   assert.equal(resultado.valid, false);
 });
 

@@ -33,6 +33,7 @@ function adminNav(): string {
     <a class="brand" href="/admin/capacitacoes">Capacitações DVS · Administração</a>
     <nav>
       <a href="/admin/capacitacoes">Capacitações</a>
+      <a href="/admin/perguntas">Perguntas</a>
       <a href="/admin/painel">Painel</a>
       <a href="/admin/criadores">Criadores de Curso</a>
       <form method="post" action="/logout" class="logout-form"><button type="submit" class="link-button">Sair</button></form>

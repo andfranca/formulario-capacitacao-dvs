@@ -61,6 +61,19 @@
     atualizar();
   }
 
+  function configurarTipoPergunta() {
+    var select = document.querySelector("[data-tipo-pergunta]");
+    var campoOpcoes = document.querySelector("[data-campo-opcoes-pergunta]");
+    if (!select || !campoOpcoes) return;
+
+    function atualizar() {
+      alternarVisibilidade(campoOpcoes, select.value === "multipla_escolha");
+    }
+
+    select.addEventListener("change", atualizar);
+    atualizar();
+  }
+
   function configurarCopiarLink() {
     document.querySelectorAll("[data-copy-link]").forEach(function (botao) {
       botao.addEventListener("click", function () {
@@ -92,6 +105,7 @@
     configurarTipoServidor();
     configurarFormacao();
     configurarTipoCapacitacao();
+    configurarTipoPergunta();
     configurarCopiarLink();
     configurarConfirmacao();
   });
