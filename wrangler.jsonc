@@ -12,7 +12,7 @@
     {
       "binding": "DB",
       "database_name": "formulario-capacitacao-dvs",
-      "database_id": "REPLACE_WITH_YOUR_DATABASE_ID",
+      "database_id": "5829c18a-6a8a-43c3-9875-432a82516c0c",
       "migrations_dir": "migrations"
     }
   ],
