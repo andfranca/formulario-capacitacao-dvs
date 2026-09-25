@@ -1,0 +1,138 @@
+import { Hono } from "hono";
+import type { Env } from "../env";
+import { exigirSessao } from "./auth";
+import {
+  criarCapacitacao,
+  listarCapacitacoes,
+  buscarCapacitacaoPorId,
+  atualizarCapacitacao,
+  alternarStatusCapacitacao,
+} from "../services/capacitacoes";
+import { listarAvaliacoesPorCapacitacao } from "../services/avaliacoes";
+import { calcularEstatisticasResultados } from "../services/resultados";
+import { calcularIndicadoresPainel } from "../services/painel";
+import { exportarCapacitacoesCsv, exportarAvaliacoesCsv, exportarConsolidadoCsv } from "../services/exportacao";
+import { validarNovaCapacitacao, validarEdicaoCapacitacao } from "../utils/validation";
+import { tipoTemInstrutor } from "../data/tipos";
+import {
+  paginaListaCapacitacoes,
+  paginaNovaCapacitacao,
+  paginaVerCapacitacao,
+  paginaEditarCapacitacao,
+  paginaResultados,
+  paginaPainel,
+} from "../views/admin";
+
+export const adminRoutes = new Hono<{ Bindings: Env }>();
+
+adminRoutes.use("*", exigirSessao);
+
+adminRoutes.get("/capacitacoes", async (c) => {
+  const lista = await listarCapacitacoes(c.env.DB);
+  return c.html(paginaListaCapacitacoes(lista));
+});
+
+adminRoutes.get("/capacitacoes/nova", (c) => c.html(paginaNovaCapacitacao()));
+
+adminRoutes.post("/capacitacoes", async (c) => {
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const resultado = validarNovaCapacitacao(body);
+
+  if (!resultado.valid) {
+    const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+    return c.html(paginaNovaCapacitacao({ erros: resultado.errors, valores }), 400);
+  }
+
+  const cap = await criarCapacitacao(c.env.DB, resultado.data);
+  return c.redirect(`/admin/capacitacoes/${cap.id}?criada=1`, 303);
+});
+
+adminRoutes.get("/capacitacoes/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const cap = await buscarCapacitacaoPorId(c.env.DB, id);
+  if (!cap) return c.notFound();
+
+  const link = `${new URL(c.req.url).origin}/avaliar/${encodeURIComponent(cap.codigo)}`;
+  const criada = c.req.query("criada") === "1";
+  return c.html(paginaVerCapacitacao(cap, link, criada));
+});
+
+adminRoutes.get("/capacitacoes/:id/editar", async (c) => {
+  const id = Number(c.req.param("id"));
+  const cap = await buscarCapacitacaoPorId(c.env.DB, id);
+  if (!cap) return c.notFound();
+  return c.html(paginaEditarCapacitacao(cap));
+});
+
+adminRoutes.post("/capacitacoes/:id/editar", async (c) => {
+  const id = Number(c.req.param("id"));
+  const cap = await buscarCapacitacaoPorId(c.env.DB, id);
+  if (!cap) return c.notFound();
+
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const resultado = validarEdicaoCapacitacao(body);
+
+  if (!resultado.valid) {
+    const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+    return c.html(paginaEditarCapacitacao(cap, { erros: resultado.errors, valores }), 400);
+  }
+
+  await atualizarCapacitacao(c.env.DB, id, resultado.data);
+  return c.redirect(`/admin/capacitacoes/${id}`, 303);
+});
+
+adminRoutes.post("/capacitacoes/:id/status", async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const novoStatus = String(body.status ?? "");
+  if (novoStatus !== "ativa" && novoStatus !== "encerrada") return c.text("Status inválido.", 400);
+
+  const cap = await alternarStatusCapacitacao(c.env.DB, id, novoStatus);
+  if (!cap) return c.notFound();
+  return c.redirect("/admin/capacitacoes", 303);
+});
+
+adminRoutes.get("/capacitacoes/:id/resultados", async (c) => {
+  const id = Number(c.req.param("id"));
+  const cap = await buscarCapacitacaoPorId(c.env.DB, id);
+  if (!cap) return c.notFound();
+
+  const avaliacoes = await listarAvaliacoesPorCapacitacao(c.env.DB, id);
+  const stats = calcularEstatisticasResultados(avaliacoes, tipoTemInstrutor(cap.tipo));
+  return c.html(paginaResultados(cap, stats));
+});
+
+adminRoutes.get("/painel", async (c) => {
+  const filtros = {
+    area: c.req.query("area") || undefined,
+    tipo: c.req.query("tipo") || undefined,
+    periodoInicio: c.req.query("periodo_inicio") || undefined,
+    periodoFim: c.req.query("periodo_fim") || undefined,
+  };
+  const indicadores = await calcularIndicadoresPainel(c.env.DB, filtros);
+  return c.html(paginaPainel(indicadores, filtros));
+});
+
+adminRoutes.get("/exportar/capacitacoes.csv", async (c) => {
+  const csv = await exportarCapacitacoesCsv(c.env.DB);
+  return c.body(csv, 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": 'attachment; filename="capacitacoes.csv"',
+  });
+});
+
+adminRoutes.get("/exportar/avaliacoes.csv", async (c) => {
+  const csv = await exportarAvaliacoesCsv(c.env.DB);
+  return c.body(csv, 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": 'attachment; filename="avaliacoes.csv"',
+  });
+});
+
+adminRoutes.get("/exportar/consolidado.csv", async (c) => {
+  const csv = await exportarConsolidadoCsv(c.env.DB);
+  return c.body(csv, 200, {
+    "Content-Type": "text/csv; charset=utf-8",
+    "Content-Disposition": 'attachment; filename="consolidado.csv"',
+  });
+});

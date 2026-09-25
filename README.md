@@ -1,2 +1,147 @@
-# formulario-capacitacao-dvs
+# Capacitações DVS
 
+Sistema de cadastro, avaliação e acompanhamento das capacitações promovidas pela
+Divisão de Vigilância Sanitária (DVS/CEVS/SES-RS).
+
+Aplicação pequena e de manutenção simples: 1 Cloudflare Worker servindo HTML/CSS/JS
+via Static Assets, com Cloudflare D1 como banco de dados. Sem framework de frontend,
+sem ORM, sem serviços pagos — pensada para rodar inteiramente no plano gratuito da
+Cloudflare.
+
+## Stack
+
+- **Cloudflare Workers** + **Static Assets** (frontend e backend no mesmo projeto)
+- **Cloudflare D1** (SQLite) para persistência
+- **Hono** para roteamento
+- **TypeScript** no backend, HTML/CSS/JS simples no frontend
+- **qrcode** para gerar o QR Code (SVG) de cada capacitação
+
+## Estrutura do projeto
+
+```
+src/
+  index.ts        # Worker entry, monta as rotas
+  routes/          # public.ts (avaliar/qr), auth.ts (login/sessão), admin.ts
+  services/        # regras de negócio + SQL explícito de acesso ao D1
+  views/           # funções que retornam HTML (layout + páginas)
+  data/            # listas fechadas: áreas, tipos, municípios do RS, CRS
+  utils/           # validação, estatísticas, CSV, escape de HTML
+public/
+  css/style.css
+  js/form.js       # progressive enhancement (toggles de campo, copiar link)
+migrations/        # migrations do D1
+tests/             # testes da lógica pura (node:test)
+```
+
+## Desenvolvimento local
+
+### 1. Pré-requisitos
+
+- Node.js 20+ instalado.
+- Uma conta gratuita na Cloudflare (necessária apenas para o deploy; não é
+  necessária para rodar localmente).
+
+### 2. Instalar dependências
+
+```bash
+npm install
+```
+
+### 3. Configurar segredos locais
+
+Copie o arquivo de exemplo e ajuste os valores:
+
+```bash
+cp .dev.vars.example .dev.vars
+```
+
+O `.dev.vars` não deve ser commitado (já está no `.gitignore`). Ele define:
+
+- `ADMIN_PASSWORD`: a senha de acesso administrativo (não há cadastro de usuários).
+- `SESSION_SECRET`: string usada para assinar o cookie de sessão administrativa.
+- `TURNSTILE_SECRET_KEY`: para desenvolvimento, use a chave de teste oficial da
+  Cloudflare que sempre passa na validação (já vem preenchida no arquivo de
+  exemplo — não é um segredo real, funciona em qualquer `localhost`):
+  https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+
+A chave pública do Turnstile (`TURNSTILE_SITE_KEY`) já vem configurada com a
+chave de teste correspondente em `wrangler.jsonc` (`vars`).
+
+### 4. Criar o banco D1 local e aplicar as migrations
+
+O `wrangler.jsonc` já referencia um banco chamado `formulario-capacitacao-dvs`.
+Para desenvolvimento local não é necessário criar o banco na Cloudflare — o
+Wrangler simula o D1 localmente. Basta aplicar as migrations:
+
+```bash
+npm run db:migrations:local
+```
+
+### 5. Rodar o servidor de desenvolvimento
+
+```bash
+npm run dev
+```
+
+Acesse http://localhost:8787. A área administrativa fica em
+http://localhost:8787/login.
+
+### 6. Rodar os testes e o typecheck
+
+```bash
+npm test
+npm run typecheck
+```
+
+## Publicando na Cloudflare
+
+### 1. Criar o banco D1
+
+```bash
+npx wrangler d1 create formulario-capacitacao-dvs
+```
+
+O comando acima imprime um `database_id`. Copie esse valor para o campo
+`database_id` em `wrangler.jsonc` (substitua `REPLACE_WITH_YOUR_DATABASE_ID`).
+
+### 2. Aplicar as migrations no banco remoto
+
+```bash
+npm run db:migrations:remote
+```
+
+### 3. Configurar os secrets de produção
+
+```bash
+npx wrangler secret put ADMIN_PASSWORD
+npx wrangler secret put SESSION_SECRET
+npx wrangler secret put TURNSTILE_SECRET_KEY
+```
+
+### 4. Configurar o Cloudflare Turnstile
+
+1. No painel da Cloudflare, crie um widget Turnstile para o domínio da
+   aplicação (Security → Turnstile).
+2. Copie a "Site Key" gerada e substitua o valor de `TURNSTILE_SITE_KEY` em
+   `vars` no `wrangler.jsonc` (é uma chave pública, pode ficar no repositório).
+3. Copie a "Secret Key" e configure-a com o comando `wrangler secret put
+   TURNSTILE_SECRET_KEY` do passo anterior.
+
+### 5. Publicar
+
+```bash
+npm run deploy
+```
+
+O Wrangler publica o Worker e os Static Assets (pasta `public/`) juntos. A URL
+de produção é exibida ao final do comando.
+
+## Limitações conhecidas (por escolha de design)
+
+- Não há cadastro de usuários administrativos: a área administrativa usa uma
+  única senha compartilhada (`ADMIN_PASSWORD`), adequada para uma equipe
+  pequena. Se isso deixar de ser suficiente, será necessário desenhar um
+  sistema de contas — fora do escopo deste MVP.
+- Não há proteção contra respostas duplicadas por IP/cookie/dispositivo (por
+  decisão explícita, para preservar a privacidade dos participantes).
+- Exportação apenas em CSV (sem XLSX).

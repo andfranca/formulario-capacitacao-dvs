@@ -1,0 +1,12 @@
+# Copie este arquivo para ".dev.vars" (que não deve ser commitado) e ajuste os valores.
+
+# Senha única de acesso administrativo (não há cadastro de usuários nesta versão).
+ADMIN_PASSWORD=troque-esta-senha
+
+# Chave usada para assinar o cookie de sessão administrativa (HMAC). Use uma string longa e aleatória.
+SESSION_SECRET=troque-este-segredo-aleatorio
+
+# Chave secreta do Cloudflare Turnstile. Para desenvolvimento local, use a chave de teste
+# oficial da Cloudflare que sempre passa na validação (não é um segredo real):
+# https://developers.cloudflare.com/turnstile/troubleshooting/testing/
+TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
