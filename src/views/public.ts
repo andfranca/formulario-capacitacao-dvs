@@ -15,7 +15,10 @@ export function paginaInicial(): string {
         <p>Sistema de cadastro, avaliação e acompanhamento das capacitações promovidas pela
         Divisão de Vigilância Sanitária (DVS/CEVS/SES-RS).</p>
         <p>Se você recebeu um link ou QR Code para avaliar uma capacitação, utilize-o diretamente.</p>
-        <p><a class="button" href="/login">Acesso administrativo</a></p>
+        <div class="actions">
+          <a class="button" href="/login">Acesso administrativo</a>
+          <a class="button secondary" href="/criador/login">Acesso do Criador de Curso</a>
+        </div>
       </section>`,
   });
 }

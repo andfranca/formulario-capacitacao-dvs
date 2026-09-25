@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import type { Env } from "../env";
-import { exigirSessao } from "./auth";
+import { exigirAdmin } from "./auth";
 import {
   criarCapacitacao,
   listarCapacitacoes,
@@ -12,7 +12,9 @@ import { listarAvaliacoesPorCapacitacao } from "../services/avaliacoes";
 import { calcularEstatisticasResultados } from "../services/resultados";
 import { calcularIndicadoresPainel } from "../services/painel";
 import { exportarCapacitacoesCsv, exportarAvaliacoesCsv, exportarConsolidadoCsv } from "../services/exportacao";
-import { validarNovaCapacitacao, validarEdicaoCapacitacao } from "../utils/validation";
+import { criarCriador, listarCriadores, excluirCriador } from "../services/usuarios";
+import { validarNovaCapacitacao, validarEdicaoCapacitacao, validarNovoCriador } from "../utils/validation";
+import { isUniqueConstraintError } from "../services/codigo";
 import { tipoTemInstrutor } from "../data/tipos";
 import {
   paginaListaCapacitacoes,
@@ -21,11 +23,13 @@ import {
   paginaEditarCapacitacao,
   paginaResultados,
   paginaPainel,
+  paginaListaCriadores,
+  paginaNovoCriador,
 } from "../views/admin";
 
 export const adminRoutes = new Hono<{ Bindings: Env }>();
 
-adminRoutes.use("*", exigirSessao);
+adminRoutes.use("*", exigirAdmin);
 
 adminRoutes.get("/capacitacoes", async (c) => {
   const lista = await listarCapacitacoes(c.env.DB);
@@ -135,4 +139,39 @@ adminRoutes.get("/exportar/consolidado.csv", async (c) => {
     "Content-Type": "text/csv; charset=utf-8",
     "Content-Disposition": 'attachment; filename="consolidado.csv"',
   });
+});
+
+adminRoutes.get("/criadores", async (c) => {
+  const lista = await listarCriadores(c.env.DB);
+  return c.html(paginaListaCriadores(lista));
+});
+
+adminRoutes.get("/criadores/novo", (c) => c.html(paginaNovoCriador()));
+
+adminRoutes.post("/criadores", async (c) => {
+  const body = (await c.req.parseBody()) as Record<string, unknown>;
+  const resultado = validarNovoCriador(body);
+
+  if (!resultado.valid) {
+    const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+    return c.html(paginaNovoCriador({ erros: resultado.errors, valores }), 400);
+  }
+
+  try {
+    await criarCriador(c.env.DB, resultado.data.nome, resultado.data.email, resultado.data.senha);
+  } catch (err) {
+    if (isUniqueConstraintError(err)) {
+      const valores = Object.fromEntries(Object.entries(body).map(([k, v]) => [k, String(v)]));
+      return c.html(paginaNovoCriador({ erros: ["Já existe uma conta com esse e-mail."], valores }), 400);
+    }
+    throw err;
+  }
+
+  return c.redirect("/admin/criadores", 303);
+});
+
+adminRoutes.post("/criadores/:id/excluir", async (c) => {
+  const id = Number(c.req.param("id"));
+  await excluirCriador(c.env.DB, id);
+  return c.redirect("/admin/criadores", 303);
 });

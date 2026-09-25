@@ -78,10 +78,21 @@
     });
   }
 
+  function configurarConfirmacao() {
+    document.querySelectorAll("[data-confirmar]").forEach(function (form) {
+      form.addEventListener("submit", function (evento) {
+        if (!window.confirm(form.getAttribute("data-confirmar"))) {
+          evento.preventDefault();
+        }
+      });
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     configurarTipoServidor();
     configurarFormacao();
     configurarTipoCapacitacao();
     configurarCopiarLink();
+    configurarConfirmacao();
   });
 })();

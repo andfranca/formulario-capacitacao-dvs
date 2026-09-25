@@ -4,6 +4,7 @@ import { AREAS, nomeArea } from "../data/areas";
 import { TIPOS_CAPACITACAO, labelTipo } from "../data/tipos";
 import { taxaResposta, formatarPercentual, formatarNumero } from "../utils/stats";
 import type { CapacitacaoRecord, CapacitacaoComContagem } from "../services/capacitacoes";
+import type { CriadorComContagem } from "../services/usuarios";
 
 function opcaoSelecionada(valor: string | undefined, alvo: string): string {
   return valor === alvo ? "selected" : "";
@@ -46,6 +47,7 @@ export function paginaListaCapacitacoes(lista: CapacitacaoComContagem[]): string
         <td>${c.numero_participantes ?? "-"}</td>
         <td>${c.respostas}</td>
         <td>${taxa}</td>
+        <td>${escapeHtml(c.criado_por_nome ?? "Admin")}</td>
         <td class="acoes">
           <a href="/admin/capacitacoes/${c.id}">Ver</a>
           <a href="/admin/capacitacoes/${c.id}/editar">Editar</a>
@@ -61,7 +63,7 @@ export function paginaListaCapacitacoes(lista: CapacitacaoComContagem[]): string
 
   return layout({
     title: "Capacitações",
-    admin: true,
+    nav: "admin",
     body: `
       <div class="page-header">
         <h1>Capacitações</h1>
@@ -77,10 +79,10 @@ export function paginaListaCapacitacoes(lista: CapacitacaoComContagem[]): string
           <thead>
             <tr>
               <th>Código</th><th>Título</th><th>Área</th><th>Tipo</th><th>Data</th>
-              <th>Status</th><th>Participantes</th><th>Respostas</th><th>Taxa de resposta</th><th>Ações</th>
+              <th>Status</th><th>Participantes</th><th>Respostas</th><th>Taxa de resposta</th><th>Criado por</th><th>Ações</th>
             </tr>
           </thead>
-          <tbody>${linhas || `<tr><td colspan="10">Nenhuma capacitação cadastrada.</td></tr>`}</tbody>
+          <tbody>${linhas || `<tr><td colspan="11">Nenhuma capacitação cadastrada.</td></tr>`}</tbody>
         </table>
       </section>`,
   });
@@ -99,7 +101,7 @@ export function paginaNovaCapacitacao({ erros = [], valores = {} }: FormularioNo
 
   return layout({
     title: "Nova capacitação",
-    admin: true,
+    nav: "admin",
     body: `
       <h1>Cadastro de Capacitação</h1>
       ${listaErros(erros)}
@@ -149,7 +151,7 @@ export function paginaNovaCapacitacao({ erros = [], valores = {} }: FormularioNo
 export function paginaVerCapacitacao(cap: CapacitacaoRecord, link: string, criada = false): string {
   return layout({
     title: `Capacitação ${cap.codigo}`,
-    admin: true,
+    nav: "admin",
     body: `
       <h1>${escapeHtml(cap.titulo)}</h1>
       ${criada ? `<section class="card sucesso"><p>Capacitação registrada com sucesso.</p></section>` : ""}
@@ -197,7 +199,7 @@ export function paginaEditarCapacitacao(cap: CapacitacaoRecord, { erros = [], va
 
   return layout({
     title: `Editar ${cap.codigo}`,
-    admin: true,
+    nav: "admin",
     body: `
       <h1>Editar capacitação ${escapeHtml(cap.codigo)}</h1>
       ${listaErros(erros)}
@@ -292,7 +294,7 @@ export function paginaResultados(cap: CapacitacaoRecord, stats: EstatisticasResu
 
   return layout({
     title: `Resultados ${cap.codigo}`,
-    admin: true,
+    nav: "admin",
     body: `
       <h1>Resultados: ${escapeHtml(cap.titulo)}</h1>
       <section class="card">
@@ -355,7 +357,7 @@ export function paginaPainel(indicadores: IndicadoresPainel, filtros: { area?: s
 
   return layout({
     title: "Painel",
-    admin: true,
+    nav: "admin",
     body: `
       <h1>Painel</h1>
 
@@ -423,5 +425,72 @@ export function paginaPainel(indicadores: IndicadoresPainel, filtros: { area?: s
           </tbody>
         </table>
       </section>`,
+  });
+}
+
+export function paginaListaCriadores(lista: CriadorComContagem[]): string {
+  const linhas = lista
+    .map(
+      (u) => `<tr>
+        <td>${escapeHtml(u.nome)}</td>
+        <td>${escapeHtml(u.email)}</td>
+        <td>${u.capacitacoes_criadas}</td>
+        <td class="acoes">
+          <form method="post" action="/admin/criadores/${u.id}/excluir" class="inline-form" data-confirmar="Excluir a conta de ${escapeHtml(u.nome)}? As capacitações já cadastradas por ela permanecem no sistema.">
+            <button type="submit" class="link-button">Excluir</button>
+          </form>
+        </td>
+      </tr>`,
+    )
+    .join("");
+
+  return layout({
+    title: "Criadores de Curso",
+    nav: "admin",
+    body: `
+      <div class="page-header">
+        <h1>Criadores de Curso</h1>
+        <a class="button" href="/admin/criadores/novo">Novo Criador de Curso</a>
+      </div>
+      <section class="card table-wrap">
+        <table>
+          <thead>
+            <tr><th>Nome</th><th>E-mail</th><th>Cursos cadastrados</th><th>Ações</th></tr>
+          </thead>
+          <tbody>${linhas || `<tr><td colspan="4">Nenhum Criador de Curso cadastrado.</td></tr>`}</tbody>
+        </table>
+      </section>`,
+    scripts: ["/js/form.js"],
+  });
+}
+
+interface FormularioNovoCriador {
+  erros?: string[];
+  valores?: Record<string, string>;
+}
+
+export function paginaNovoCriador({ erros = [], valores = {} }: FormularioNovoCriador = {}): string {
+  return layout({
+    title: "Novo Criador de Curso",
+    nav: "admin",
+    body: `
+      <h1>Novo Criador de Curso</h1>
+      ${listaErros(erros)}
+      <form method="post" action="/admin/criadores" class="card">
+        <div class="campo">
+          <label for="nome">Nome</label>
+          <input type="text" id="nome" name="nome" maxlength="150" required value="${escapeHtml(valores.nome ?? "")}">
+        </div>
+        <div class="campo">
+          <label for="email">E-mail (será o login)</label>
+          <input type="email" id="email" name="email" maxlength="254" required value="${escapeHtml(valores.email ?? "")}">
+        </div>
+        <div class="campo">
+          <label for="senha">Senha inicial</label>
+          <input type="password" id="senha" name="senha" minlength="8" required>
+          <p class="ajuda">Mínimo de 8 caracteres. Repasse essa senha ao Criador de Curso — não há tela de recuperação nesta versão.</p>
+        </div>
+        <button type="submit" class="button">Criar conta</button>
+      </form>`,
   });
 }

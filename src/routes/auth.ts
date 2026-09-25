@@ -17,7 +17,7 @@ authRoutes.post("/login", async (c) => {
     return c.html(paginaLogin("Senha incorreta."), 401);
   }
 
-  const cookieValue = await criarCookieSessao(c.env.SESSION_SECRET);
+  const cookieValue = await criarCookieSessao(c.env.SESSION_SECRET, { role: "admin" });
   setCookie(c, SESSION_COOKIE_NAME, cookieValue, {
     httpOnly: true,
     secure: new URL(c.req.url).protocol === "https:",
@@ -33,9 +33,10 @@ authRoutes.post("/logout", (c) => {
   return c.redirect("/login", 303);
 });
 
-export const exigirSessao: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
+export const exigirAdmin: MiddlewareHandler<{ Bindings: Env }> = async (c, next) => {
   const cookieValue = getCookie(c, SESSION_COOKIE_NAME);
-  if (!(await sessaoValida(c.env.SESSION_SECRET, cookieValue))) {
+  const sessao = await sessaoValida(c.env.SESSION_SECRET, cookieValue);
+  if (!sessao || sessao.role !== "admin") {
     return c.redirect("/login", 303);
   }
   await next();

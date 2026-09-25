@@ -3,6 +3,7 @@ import type { Env } from "./env";
 import { publicRoutes } from "./routes/public";
 import { authRoutes } from "./routes/auth";
 import { adminRoutes } from "./routes/admin";
+import { criadorRoutes } from "./routes/criador";
 import { layout } from "./views/layout";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -37,5 +38,6 @@ app.notFound((c) =>
 app.route("/", publicRoutes);
 app.route("/", authRoutes);
 app.route("/admin", adminRoutes);
+app.route("/criador", criadorRoutes);
 
 export default app;

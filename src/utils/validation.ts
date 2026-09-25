@@ -215,3 +215,28 @@ export function validarNovaAvaliacao(
     },
   };
 }
+
+export interface NovoCriadorInput {
+  nome: string;
+  email: string;
+  senha: string;
+}
+
+const SENHA_MIN_LENGTH = 8;
+
+export function validarNovoCriador(body: Record<string, unknown>): ValidationResult<NovoCriadorInput> {
+  const errors: string[] = [];
+
+  const nome = String(body.nome ?? "").trim();
+  if (!nome) errors.push("Nome é obrigatório.");
+  if (nome.length > LIMITES.nome) errors.push(`Nome deve ter no máximo ${LIMITES.nome} caracteres.`);
+
+  const email = String(body.email ?? "").trim();
+  if (!email || !isEmailValido(email) || email.length > LIMITES.email) errors.push("E-mail em formato inválido.");
+
+  const senha = String(body.senha ?? "");
+  if (senha.length < SENHA_MIN_LENGTH) errors.push(`Senha deve ter ao menos ${SENHA_MIN_LENGTH} caracteres.`);
+
+  if (errors.length > 0) return { valid: false, errors };
+  return { valid: true, data: { nome, email, senha } };
+}

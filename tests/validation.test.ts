@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { validarNovaCapacitacao, validarEdicaoCapacitacao, validarNovaAvaliacao } from "../src/utils/validation";
+import { validarNovaCapacitacao, validarEdicaoCapacitacao, validarNovaAvaliacao, validarNovoCriador } from "../src/utils/validation";
 
 const CAPACITACAO_BASE = {
   titulo: "Boas práticas em vigilância sanitária",
@@ -122,5 +122,20 @@ test("validarNovaAvaliacao ignora Q5 quando não aplicável (autoinstrucional se
 
 test("validarNovaAvaliacao exige Q5 entre 1 e 10 quando aplicável", () => {
   const resultado = validarNovaAvaliacao({ ...AVALIACAO_BASE, q5: "" }, true);
+  assert.equal(resultado.valid, false);
+});
+
+test("validarNovoCriador aceita nome, e-mail e senha válidos", () => {
+  const resultado = validarNovoCriador({ nome: "Ana Souza", email: "ana@exemplo.com", senha: "senhaForte123" });
+  assert.equal(resultado.valid, true);
+});
+
+test("validarNovoCriador rejeita e-mail em formato inválido", () => {
+  const resultado = validarNovoCriador({ nome: "Ana Souza", email: "nao-e-email", senha: "senhaForte123" });
+  assert.equal(resultado.valid, false);
+});
+
+test("validarNovoCriador exige senha com pelo menos 8 caracteres", () => {
+  const resultado = validarNovoCriador({ nome: "Ana Souza", email: "ana@exemplo.com", senha: "1234567" });
   assert.equal(resultado.valid, false);
 });

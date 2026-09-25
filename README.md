@@ -21,7 +21,7 @@ Cloudflare.
 ```
 src/
   index.ts        # Worker entry, monta as rotas
-  routes/          # public.ts (avaliar/qr), auth.ts (login/sessão), admin.ts
+  routes/          # public.ts (avaliar/qr), auth.ts (admin), criador.ts (Criador de Curso), admin.ts
   services/        # regras de negócio + SQL explícito de acesso ao D1
   views/           # funções que retornam HTML (layout + páginas)
   data/            # listas fechadas: áreas, tipos, municípios do RS, CRS
@@ -32,6 +32,18 @@ public/
 migrations/        # migrations do D1
 tests/             # testes da lógica pura (node:test)
 ```
+
+## Perfis de acesso
+
+- **Admin** (`/login`): senha única (`ADMIN_PASSWORD`), acesso total — cadastra,
+  edita e encerra qualquer capacitação, vê resultados, painel geral, exporta
+  CSV, e cria/exclui contas de Criador de Curso em `/admin/criadores`.
+- **Criador de Curso** (`/criador/login`): conta com e-mail e senha, criada
+  pelo Admin em `/admin/criadores/novo`. Só cadastra novas capacitações e vê a
+  lista + link/QR Code das que ele mesmo criou — sem acesso a edição,
+  encerramento, resultados, painel ou exportação. Não há recuperação de senha
+  nesta versão: se esquecer, o Admin cria uma nova senha excluindo e
+  recriando a conta.
 
 ## Desenvolvimento local
 
@@ -138,10 +150,12 @@ de produção é exibida ao final do comando.
 
 ## Limitações conhecidas (por escolha de design)
 
-- Não há cadastro de usuários administrativos: a área administrativa usa uma
-  única senha compartilhada (`ADMIN_PASSWORD`), adequada para uma equipe
-  pequena. Se isso deixar de ser suficiente, será necessário desenhar um
-  sistema de contas — fora do escopo deste MVP.
+- O Admin continua sendo uma única senha compartilhada (`ADMIN_PASSWORD`), não
+  uma conta no banco — não há múltiplos administradores nesta versão.
+- Sem recuperação/troca de senha para o Criador de Curso: se ele esquecer a
+  senha, o Admin precisa excluir a conta e criar uma nova. Excluir a conta
+  desassocia (mas não apaga) as capacitações que ela criou — elas passam a
+  aparecer como criadas por "Admin".
 - Não há proteção contra respostas duplicadas por IP/cookie/dispositivo (por
   decisão explícita, para preservar a privacidade dos participantes).
 - Exportação apenas em CSV (sem XLSX).

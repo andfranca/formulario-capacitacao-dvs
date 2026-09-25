@@ -24,19 +24,22 @@ async function importKey(secret: string): Promise<CryptoKey> {
   ]);
 }
 
-export async function criarCookieSessao(secret: string): Promise<string> {
+export type SessaoDados = { role: "admin" } | { role: "criador"; usuarioId: number };
+export type SessaoPayload = SessaoDados & { exp: number };
+
+export async function criarCookieSessao(secret: string, dados: SessaoDados): Promise<string> {
   const exp = Date.now() + SESSION_DURATION_MS;
-  const payload = JSON.stringify({ exp });
+  const payload = JSON.stringify({ ...dados, exp });
   const payloadBytes = new TextEncoder().encode(payload);
   const key = await importKey(secret);
   const signature = await crypto.subtle.sign("HMAC", key, payloadBytes);
   return `${base64UrlEncode(payloadBytes)}.${base64UrlEncode(new Uint8Array(signature))}`;
 }
 
-export async function sessaoValida(secret: string, cookieValue: string | undefined): Promise<boolean> {
-  if (!cookieValue) return false;
+export async function sessaoValida(secret: string, cookieValue: string | undefined): Promise<SessaoPayload | null> {
+  if (!cookieValue) return null;
   const partes = cookieValue.split(".");
-  if (partes.length !== 2) return false;
+  if (partes.length !== 2) return null;
   const [payloadPart, signaturePart] = partes;
 
   try {
@@ -44,12 +47,14 @@ export async function sessaoValida(secret: string, cookieValue: string | undefin
     const signatureBytes = base64UrlDecode(signaturePart);
     const key = await importKey(secret);
     const assinaturaValida = await crypto.subtle.verify("HMAC", key, signatureBytes, payloadBytes);
-    if (!assinaturaValida) return false;
+    if (!assinaturaValida) return null;
 
-    const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as { exp: number };
-    return typeof payload.exp === "number" && payload.exp > Date.now();
+    const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as SessaoPayload;
+    if (typeof payload.exp !== "number" || payload.exp <= Date.now()) return null;
+    if (payload.role !== "admin" && payload.role !== "criador") return null;
+    return payload;
   } catch {
-    return false;
+    return null;
   }
 }
 
